@@ -4,6 +4,7 @@ Statistics app
 import webapp2
 from slackclient import SlackClient
 import argparse
+import slack_utils
 
 
 PORT = 8081
@@ -22,45 +23,43 @@ def handle_500(request, response, exception):
     response.write('A server error occurred!')
     response.set_status(500)
 
-#TODO import this from utils module
-def is_float(str):
-    try:
-        float(str)
-        # Yeah, i'm sure there's a better way to do this.
-        #  might be some regex like r"^[-+]?(?:\b[0-9]+(?:\.[0-9]*)?|\.[0-9]+\b)(?:[eE][-+]?[0-9]+\b)?$"
-        if str in ["NaN", "-NaN", "+NaN", "infinity", "-iNF", "nan", "-nan", "+nan"]:
-            return False
-        return True
-    except ValueError:
-        return False
-
+# Specific user average
+class UserAverageHandler(webapp2.RequestHandler):
+    def get(self, user):
+        #TODO parse args and create slack client just once!
+        args = parse_args()
+        token = args.token
+        slack_client = SlackClient(token)
+        if slack_utils.is_user(slack_client, user):
+            messages = slack_utils.get_user_messages(slack_client, user)
+            average = 0
+            self.response.write('Average for user {}: {}'.format(user, average))
+        else:
+            self.response.write('User {} was not found'.format(user))
 
 # The total average
-class Average(webapp2.RequestHandler):
+class AverageHandler(webapp2.RequestHandler):
 
     # Assuming we want the average of all numbers ever writen (using the history)
     def get(self):
         #TODO move all logic to app
         args = parse_args()
         token = args.token
-        self.slack_client = SlackClient(token)
+        slack_client = SlackClient(token)
 
         # Retrieving channels
-        channel_ids = []
-        channels = self.slack_client.api_call("channels.list").get('channels')
-        for channel in channels:
-            channel_ids.append(channel.get('id'))
+        channel_ids = slack_utils.get_channels(slack_client)
 
         all_sum = 0
         counter = 0
         # Retrieving messages
         for c_id in channel_ids:
-            current_messages = self.slack_client.api_call("channels.history", channel=c_id).get('messages')
+            current_messages = slack_client.api_call("channels.history", channel=c_id).get('messages')
             for m in current_messages:
                 if m.has_key(u'user'):
                     text = m.get('text')
 
-                    if is_float(text):
+                    if slack_utils.is_float(text):
                         all_sum += float(text)
                         counter += 1
         # Calculating the average
@@ -71,9 +70,12 @@ class Average(webapp2.RequestHandler):
 
         self.response.write('Total average: {}'.format(str(average)))
 
+
+
 # app config
 app = webapp2.WSGIApplication([
-    ('/average', Average),
+    webapp2.Route('/average', AverageHandler),
+    webapp2.Route('/average/<user>', handler=UserAverageHandler, name='user'),
 ], debug=True)
 app.error_handlers[404] = handle_404
 app.error_handlers[500] = handle_500
