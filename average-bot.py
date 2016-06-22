@@ -1,18 +1,17 @@
-
+"""
+Live bot for notifying users with their average
+"""
 import time
 from slackclient import SlackClient
-
-# TODO parse args
 import argparse
+
+UPDATE_INTERVAL = 60 # seconds delay between updating the total average
+READ_WEBSOCKET_DELAY = 1 # second delay between reading
 
 def parse_args():
     parser = argparse.ArgumentParser(description='Slack Average Calc Bot.')
     parser.add_argument('-t', '--token', help='the bot token', required=True)
-
     return parser.parse_args()
-#bot_token = "xoxb-52635350310-glYbZBBGUYDUY3fcu1tli4MF"
-
-UPDATE_INTERVAL = 60
 
 # Dummy way to determine if str is float
 def is_float(str):
@@ -34,6 +33,19 @@ def calc_all_average(sums_dict):
         return 0
     else:
         return all_sum/counter
+
+# Updating the sums dict with the new number
+# @param sums: sums dictionary of the form {user:{sum:int , count:int}}
+# @param user: the user to update in the sums dict
+# @param message: the str message with the new number
+def update_sums(sums, user, message):
+    if not sums.has_key(user):
+        sums[user] = {}
+        sums[user][u'sum'] = 0
+        sums[user][u'count'] = 0
+    sums[user][u'sum'] += float(message)
+    sums[user][u'count'] += 1
+
 
 
 def main():
@@ -61,12 +73,7 @@ def main():
                     continue
                 # Assuming the only messages to get numbers from are with numbers only (no text)
                 if is_float(message):
-                    if not sums.has_key(user):
-                        sums[user] = {}
-                        sums[user][u'sum'] = 0
-                        sums[user][u'count'] = 0
-                    sums[user][u'sum'] += float(message)
-                    sums[user][u'count'] += 1
+                    update_sums(sums, user, message)
                     average = sums[user].get("sum") / sums[user].get("count")
                     # Assuming it should write the user's average in the latest channel it got the message from
                     sc.rtm_send_message(channel, "<@{}> Average: {}".format(user, str(average)))
@@ -77,7 +84,7 @@ def main():
                     sc.rtm_send_message("general", "All users average: {}".format(str(calc_all_average(sums))))
                     last_update = time.time()
             # Sleep for 1 second
-            time.sleep(1)
+            time.sleep(READ_WEBSOCKET_DELAY)
 
 if __name__ == '__main__':
     main()
