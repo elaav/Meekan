@@ -1,19 +1,7 @@
-"""
-Statistics app
-"""
 import webapp2
 from slackclient import SlackClient
-import argparse
 import slack_utils
 
-
-PORT = 8081
-HOST = '127.0.0.1'
-
-def parse_args():
-    parser = argparse.ArgumentParser(description='Slack Statistics WebApp.')
-    parser.add_argument('-t', '--token', help='the bot token to use for statistics', required=True)
-    return parser.parse_args()
 
 def handle_404(request, response, exception):
     response.write('Oops! I could swear this page was here!')
@@ -26,25 +14,31 @@ def handle_500(request, response, exception):
 # Specific user average
 class UserAverageHandler(webapp2.RequestHandler):
     def get(self, user):
-        #TODO parse args and create slack client just once!
-        args = parse_args()
-        token = args.token
+
+        token = self.app.config.get('general').get('bot_token')
         slack_client = SlackClient(token)
         if slack_utils.is_user(slack_client, user):
             messages = slack_utils.get_user_messages(slack_client, user)
-            average = 0
-            self.response.write('Average for user {}: {}'.format(user, average))
+            sum = 0
+            count = 0
+            for m in messages:
+                if slack_utils.is_float(m):
+                    sum += float(m)
+                    count += 1
+            if count == 0:
+                self.response.write('There were no numbers for user "{}"'.format(user))
+            else:
+                average = sum / count
+                self.response.write('Average for user "{}": {}'.format(user, average))
         else:
-            self.response.write('User {} was not found'.format(user))
+            self.response.write('User "{}" is not a user'.format(user))
 
 # The total average
 class AverageHandler(webapp2.RequestHandler):
 
     # Assuming we want the average of all numbers ever writen (using the history)
     def get(self):
-        #TODO move all logic to app
-        args = parse_args()
-        token = args.token
+        token = self.app.config.get('general').get('bot_token')
         slack_client = SlackClient(token)
 
         # Retrieving channels
@@ -69,20 +63,3 @@ class AverageHandler(webapp2.RequestHandler):
             average = all_sum / counter
 
         self.response.write('Total average: {}'.format(str(average)))
-
-
-
-# app config
-app = webapp2.WSGIApplication([
-    webapp2.Route('/average', AverageHandler),
-    webapp2.Route('/average/<user>', handler=UserAverageHandler, name='user'),
-], debug=True)
-app.error_handlers[404] = handle_404
-app.error_handlers[500] = handle_500
-
-def main():
-    from paste import httpserver
-    httpserver.serve(app, host=HOST, port=PORT)
-
-if __name__ == '__main__':
-    main()
